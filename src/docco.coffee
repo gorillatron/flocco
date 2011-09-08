@@ -52,12 +52,18 @@
 # Generate the documentation for a source file by reading it in, splitting it
 # up into comment/code sections, highlighting them for the appropriate language,
 # and merging them into an HTML template.
-generate_documentation = (source, callback) ->
+generate_documentation_from_file = (source, callback) ->
   fs.readFile source, "utf-8", (error, code) ->
     throw error if error
     sections = parse source, code
-    highlight source, sections, ->
+    highlight source, sections, null, ->
       html = generate_html source, sections
+      callback(html)
+
+generate_documentation_from_string = (title, codestring, lang, callback) ->
+    sections = parse null, codestring, lang
+    highlight null, sections, lang, ->
+      html = generate_html null, sections, title
       callback(html)
 
 # Given a string of source code, parse out each comment and the code that
@@ -71,10 +77,13 @@ generate_documentation = (source, callback) ->
 #       code_html: ...
 #     }
 #
-parse = (source, code) ->
+parse = (source, code, lang) ->
   lines    = code.split '\n'
   sections = []
-  language = get_language source
+  if source
+    language = get_language source
+  else
+    language = languages[lang]
   has_code = docs_text = code_text = ''
 
   save = (docs, code) ->
@@ -99,8 +108,12 @@ parse = (source, code) ->
 # We process the entire file in a single call to Pygments by inserting little
 # marker comments between each section and then splitting the result string
 # wherever our markers occur.
-highlight = (source, sections, callback) ->
-  language = get_language source
+highlight = (source, sections, lang, callback) ->
+  if source != null
+    language = get_language source
+  else
+    language = languages[lang]
+
   pygments = spawn 'pygmentize', ['-l', language.name, '-f', 'html', '-O', 'encoding=utf-8,tabsize=2']
   output   = ''
   
@@ -129,11 +142,14 @@ highlight = (source, sections, callback) ->
 # Once all of the code is finished highlighting, we can generate the HTML file
 # and write out the documentation. Pass the completed sections into the template
 # found in `resources/docco.jst`
-generate_html = (source, sections) ->
-  title = path.basename source
+generate_html = (source, sections, title) ->
+  if source != null
+    title = path.basename source
+  else 
+    title = title
   dest  = destination source
   html  = docco_template {
-    title: title, sections: sections, sources: sources, path: path, destination: destination
+    title: title, sections: sections, sources: sources || [], path: path, destination: destination
   }
   console.log "docco: #{source} -> generated html"
   html
@@ -218,12 +234,11 @@ highlight_start = '<div class="highlight"><pre>'
 # The end of each Pygments highlight block.
 highlight_end   = '</pre></div>'
 
-# Run the script.
-# For each source file passed in as an argument, generate the documentation.
-sources = process.ARGV.sort()
+sources = []
 
 module.exports = 
-    generate_doc: generate_documentation
+    generate_doc_from_file: generate_documentation_from_file,
+    generate_doc_from_string: generate_documentation_from_string
 
 
 
